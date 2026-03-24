@@ -1,12 +1,20 @@
 const twilio = require('twilio');
 const logger = require('../utils/logger');
 
-const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
-
 const MAX_SMS_LENGTH = 160;
+
+// Lazy-initialized — client is only created when sendSms() is first called.
+// This allows the server to start cleanly even before Twilio credentials are set.
+let client = null;
+function getClient() {
+  if (!client) {
+    client = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+  }
+  return client;
+}
 
 /**
  * Send an outbound SMS via Twilio.
@@ -25,7 +33,7 @@ async function sendSms(to, body) {
     );
   }
 
-  const message = await client.messages.create({
+  const message = await getClient().messages.create({
     from: process.env.TWILIO_PHONE_NUMBER,
     to,
     body,

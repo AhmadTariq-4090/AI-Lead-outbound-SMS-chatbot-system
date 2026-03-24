@@ -1,6 +1,17 @@
 # SMS Chatbot Backend — Milestone 1
 
-A clean, production-ready backend for outbound SMS messaging using **Node.js**, **Express**, **MongoDB**, and **Twilio**.
+A clean, production-ready backend for outbound SMS messaging using **Node.js**, **Express**, **MongoDB Atlas**, and **Twilio**.
+
+---
+
+## ✅ Status
+
+| Component | Status |
+|-----------|--------|
+| Express server | ✅ Working |
+| MongoDB Atlas | ✅ Connected |
+| Twilio SMS sending | ⏳ Add credentials to `.env` |
+| Inbound SMS webhook | ✅ Ready (needs ngrok + Twilio config) |
 
 ---
 
@@ -9,19 +20,15 @@ A clean, production-ready backend for outbound SMS messaging using **Node.js**, 
 ```
 project/
 ├── src/
-│   ├── controllers/
-│   │   └── smsController.js   # Request handlers
-│   ├── models/
-│   │   └── Lead.js            # Mongoose Lead schema
-│   ├── routes/
-│   │   └── smsRoutes.js       # Route definitions
-│   ├── services/
-│   │   └── twilioService.js   # Twilio SMS client
-│   ├── utils/
-│   │   └── logger.js          # Console logger
-│   └── app.js                 # Express app + middleware
-├── server.js                  # Entry point
-├── .env.example               # Environment variable template
+│   ├── controllers/smsController.js   # Request handlers
+│   ├── models/Lead.js                 # Mongoose Lead schema
+│   ├── routes/smsRoutes.js            # Route definitions
+│   ├── services/twilioService.js      # Twilio SMS client (lazy-init)
+│   ├── utils/logger.js                # Timestamped console logger
+│   └── app.js                         # Express + middleware + error handler
+├── server.js                          # Entry point
+├── .env                               # Your secrets (not committed)
+├── .env.example                       # Template
 └── package.json
 ```
 
@@ -38,30 +45,31 @@ npm install
 ### 2. Configure environment
 
 ```bash
-cp .env.example .env
+copy .env.example .env
 ```
 
-Edit `.env` with your real values:
+Edit `.env`:
 
 ```env
 PORT=3000
-MONGO_URI=mongodb+srv://<user>:<pass>@cluster.mongodb.net/sms_chatbot
+
+# MongoDB Atlas
+MONGO_URI=mongodb+srv://<user>:<password>@cluster0.xxxxx.mongodb.net/sms_chatbot?retryWrites=true&w=majority&appName=Cluster0
+
+# Twilio (add when ready to test SMS)
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_PHONE_NUMBER=+1234567890
 ```
 
-### 3. Start the server
+### 3. Run the server
 
 ```bash
-# Development (auto-reload)
-npm run dev
-
-# Production
-npm start
+npm run dev      # Development with auto-reload
+npm start        # Production
 ```
 
-You should see:
+Expected output:
 ```
 [INFO] MongoDB connected
 [INFO] Server running on port 3000
@@ -82,12 +90,9 @@ GET /health
 
 ---
 
-### Send Outbound SMS
+### POST /api/send-sms
 
-```
-POST /api/send-sms
-Content-Type: application/json
-```
+Sends an outbound SMS and creates/updates the Lead record.
 
 **Request:**
 ```json
@@ -97,7 +102,7 @@ Content-Type: application/json
 }
 ```
 
-**Success Response (200):**
+**Success (200):**
 ```json
 {
   "success": true,
@@ -111,100 +116,82 @@ Content-Type: application/json
 }
 ```
 
-**Error Response (400):**
+**Error (400):**
 ```json
-{
-  "success": false,
-  "error": "phoneNumber and message are required."
-}
+{ "success": false, "error": "phoneNumber and message are required." }
 ```
 
 ---
 
-### Twilio Inbound Webhook
+### POST /api/webhook/sms
 
 Twilio calls this automatically when a user replies to your SMS.
 
-```
-POST /api/webhook/sms
-```
+- Finds or creates the Lead
+- Sets status → `"engaged"`
+- Stores `lastMessage` and `lastMessageAt`
+- Returns empty TwiML (no auto-reply)
 
-Twilio sends a form-encoded body. The endpoint:
-1. Finds or creates the Lead record
-2. Marks status as `"engaged"`
-3. Stores `lastMessage` and `lastMessageAt`
-4. Returns `<Response></Response>` (empty TwiML — no auto-reply)
+> Twilio POSTs **form-encoded** bodies — the `express.urlencoded()` middleware in `app.js` handles this.
 
 ---
 
 ## 🧪 Testing with Postman
 
-1. Import this request into Postman:
-   - **Method:** `POST`
-   - **URL:** `http://localhost:3000/api/send-sms`
-   - **Header:** `Content-Type: application/json`
-   - **Body (raw JSON):**
+1. Start the server: `npm run dev`
+2. `POST http://localhost:3000/api/send-sms`
+   - Header: `Content-Type: application/json`
+   - Body:
      ```json
-     {
-       "phoneNumber": "+923001234567",
-       "message": "Hello from the chatbot!"
-     }
+     { "phoneNumber": "+923001234567", "message": "Hello from the chatbot!" }
      ```
-2. Click **Send** — you should receive an SMS on the target phone.
+3. Check your phone for the SMS ✅
 
 ---
 
-## 🌐 Connecting the Twilio Webhook (ngrok)
+## 🌐 Twilio Webhook Setup (ngrok)
 
-To test inbound replies locally:
+To receive inbound SMS replies locally:
 
-### Step 1 — Expose your local server
-
+**Step 1 — Expose your server:**
 ```bash
 ngrok http 3000
 ```
+Copy the HTTPS URL: `https://xxxx.ngrok-free.app`
 
-Copy the HTTPS forwarding URL, e.g.:
+**Step 2 — Configure Twilio Console:**
+1. [Phone Numbers → Manage → Active Numbers](https://console.twilio.com/us1/develop/phone-numbers/manage/incoming)
+2. Click your number → **Messaging → A message comes in**
+3. Set webhook: `https://xxxx.ngrok-free.app/api/webhook/sms` — `POST`
+4. Save
+
+**Step 3 — Test:**
+Send an SMS from your phone to the Twilio number. You'll see the log:
 ```
-https://a1b2c3d4.ngrok-free.app
-```
-
-### Step 2 — Configure Twilio
-
-1. Go to [Twilio Console → Phone Numbers](https://console.twilio.com/us1/develop/phone-numbers/manage/incoming)
-2. Click your SMS-capable number
-3. Under **Messaging → A message comes in**, set:
-   - **Webhook URL:** `https://a1b2c3d4.ngrok-free.app/api/webhook/sms`
-   - **HTTP Method:** `POST`
-4. Click **Save**
-
-### Step 3 — Test
-
-Send an SMS from your phone to your Twilio number. Watch your terminal logs:
-
-```
-[INFO] Inbound SMS received | {"from":"+923001234567","body":"Hi there!","leadId":"64f1a..."}
+[INFO] Inbound SMS received | {"from":"+923...","body":"Hi!","leadId":"..."}
 ```
 
 ---
 
-## 🗄️ Lead Status Values
+## 🗄️ Lead Model
 
-| Status        | Meaning                          |
-|---------------|----------------------------------|
-| `cold`        | No interaction yet               |
-| `engaged`     | Has replied to a message         |
-| `converted`   | (Future) Completed desired action|
-| `unsubscribed`| (Future) Opted out               |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `phoneNumber` | String | — | E.164 format, unique |
+| `name` | String | — | Optional |
+| `status` | String | `cold` | `cold` → `engaged` → `converted` / `unsubscribed` |
+| `lastMessage` | String | — | Most recent message body |
+| `lastMessageAt` | Date | — | Timestamp of last message |
+| `createdAt` | Date | now | Auto-managed by Mongoose |
 
 ---
 
 ## 🔧 Environment Variables
 
-| Variable              | Description                        |
-|-----------------------|------------------------------------|
-| `PORT`                | HTTP port (default: 3000)          |
-| `MONGO_URI`           | MongoDB connection string          |
-| `TWILIO_ACCOUNT_SID`  | Twilio Account SID                 |
-| `TWILIO_AUTH_TOKEN`   | Twilio Auth Token                  |
-| `TWILIO_PHONE_NUMBER` | Your Twilio phone number (E.164)   |
+| Variable | Description |
+|----------|-------------|
+| `PORT` | HTTP port (default: `3000`) |
+| `MONGO_URI` | MongoDB Atlas connection string |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID (starts with `AC`) |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
+| `TWILIO_PHONE_NUMBER` | Your Twilio number in E.164 format |
