@@ -1,6 +1,6 @@
 # SMS Chatbot Backend — Milestone 1
 
-A clean, production-ready backend for outbound SMS messaging using **Node.js**, **Express**, **MongoDB Atlas**, and **Twilio**.
+A clean, production-ready backend for outbound SMS messaging using **Node.js**, **Express**, **Supabase (Postgres)**, and **Twilio**.
 
 ---
 
@@ -9,7 +9,7 @@ A clean, production-ready backend for outbound SMS messaging using **Node.js**, 
 | Component | Status |
 |-----------|--------|
 | Express server | ✅ Working |
-| MongoDB Atlas | ✅ Connected |
+| Supabase (Postgres) | ⏳ Configure env + table |
 | Twilio SMS sending | ⏳ Add credentials to `.env` |
 | Inbound SMS webhook | ✅ Ready (needs ngrok + Twilio config) |
 
@@ -21,9 +21,10 @@ A clean, production-ready backend for outbound SMS messaging using **Node.js**, 
 project/
 ├── src/
 │   ├── controllers/smsController.js   # Request handlers
-│   ├── models/Lead.js                 # Mongoose Lead schema
+│   ├── repositories/leadRepository.js # Supabase lead upsert logic
 │   ├── routes/smsRoutes.js            # Route definitions
 │   ├── services/twilioService.js      # Twilio SMS client (lazy-init)
+│   ├── db/supabaseClient.js            # Supabase client (lazy-init)
 │   ├── utils/logger.js                # Timestamped console logger
 │   └── app.js                         # Express + middleware + error handler
 ├── server.js                          # Entry point
@@ -53,8 +54,9 @@ Edit `.env`:
 ```env
 PORT=3000
 
-# MongoDB Atlas
-MONGO_URI=mongodb+srv://<user>:<password>@cluster0.xxxxx.mongodb.net/sms_chatbot?retryWrites=true&w=majority&appName=Cluster0
+# Supabase (Postgres)
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
 
 # Twilio (add when ready to test SMS)
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -71,7 +73,6 @@ npm start        # Production
 
 Expected output:
 ```
-[INFO] MongoDB connected
 [INFO] Server running on port 3000
 ```
 
@@ -174,15 +175,29 @@ Send an SMS from your phone to the Twilio number. You'll see the log:
 ---
 
 ## 🗄️ Lead Model
+Create a `leads` table in Supabase with the following columns (matching the backend’s upsert logic):
+
+```sql
+create extension if not exists pgcrypto;
+
+create table if not exists public.leads (
+  id uuid primary key default gen_random_uuid(),
+  phone_number text not null unique,
+  name text,
+  status text not null default 'cold'
+    check (status in ('cold', 'engaged', 'converted', 'unsubscribed')),
+  last_message text,
+  last_message_at timestamptz
+);
+```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `phoneNumber` | String | — | E.164 format, unique |
-| `name` | String | — | Optional |
-| `status` | String | `cold` | `cold` → `engaged` → `converted` / `unsubscribed` |
-| `lastMessage` | String | — | Most recent message body |
-| `lastMessageAt` | Date | — | Timestamp of last message |
-| `createdAt` | Date | now | Auto-managed by Mongoose |
+| `phone_number` | text | — | E.164 format, unique |
+| `name` | text | null | Optional |
+| `status` | text | `cold` | `cold` → `engaged` → `converted` / `unsubscribed` |
+| `last_message` | text | null | Most recent message body |
+| `last_message_at` | timestamptz | null | Timestamp of last message |
 
 ---
 
@@ -191,7 +206,8 @@ Send an SMS from your phone to the Twilio number. You'll see the log:
 | Variable | Description |
 |----------|-------------|
 | `PORT` | HTTP port (default: `3000`) |
-| `MONGO_URI` | MongoDB Atlas connection string |
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key for server-side writes |
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID (starts with `AC`) |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
 | `TWILIO_PHONE_NUMBER` | Your Twilio number in E.164 format |

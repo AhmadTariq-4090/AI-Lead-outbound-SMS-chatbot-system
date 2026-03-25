@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
 const smsRoutes = require('./routes/smsRoutes');
 const logger = require('./utils/logger');
 
@@ -41,10 +40,4 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-// ── Database Connection ──────────────────────────────────────────────────────
-async function connectDb() {
-  await mongoose.connect(process.env.MONGO_URI);
-  logger.info('MongoDB connected');
-}
-
-module.exports = { app, connectDb };
+module.exports = { app };

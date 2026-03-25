@@ -1,6 +1,9 @@
-const Lead = require('../models/Lead');
 const { sendSms } = require('../services/twilioService');
 const logger = require('../utils/logger');
+const {
+  upsertOutboundLead,
+  upsertInboundLead,
+} = require('../repositories/leadRepository');
 
 /**
  * POST /api/send-sms
@@ -18,22 +21,14 @@ async function handleSendSms(req, res, next) {
     }
 
     // Upsert lead — create if new, update timestamps if existing
-    const lead = await Lead.findOneAndUpdate(
-      { phoneNumber },
-      {
-        lastMessage: message,
-        lastMessageAt: new Date(),
-        $setOnInsert: { status: 'cold' },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+    const lead = await upsertOutboundLead({ phoneNumber, message });
 
     // Send SMS via Twilio
     const twilioMessage = await sendSms(phoneNumber, message);
 
     logger.info('Outbound SMS processed', {
       phoneNumber,
-      leadId: lead._id,
+      leadId: lead?.id,
       smsSid: twilioMessage.sid,
     });
 
@@ -41,10 +36,10 @@ async function handleSendSms(req, res, next) {
       success: true,
       message: 'SMS sent successfully.',
       data: {
-        leadId: lead._id,
-        phoneNumber: lead.phoneNumber,
+        leadId: lead?.id,
+        phoneNumber: lead?.phone_number,
         smsSid: twilioMessage.sid,
-        sentAt: lead.lastMessageAt,
+        sentAt: lead?.last_message_at,
       },
     });
   } catch (error) {
@@ -68,20 +63,12 @@ async function handleIncomingSms(req, res, next) {
     }
 
     // Find or create the lead
-    const lead = await Lead.findOneAndUpdate(
-      { phoneNumber },
-      {
-        lastMessage: messageBody,
-        lastMessageAt: new Date(),
-        status: 'engaged',
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+    const lead = await upsertInboundLead({ phoneNumber, message: messageBody });
 
     logger.info('Inbound SMS received', {
       from: phoneNumber,
       body: messageBody,
-      leadId: lead._id,
+      leadId: lead?.id,
     });
 
     // Respond 200 with empty TwiML body — no reply message needed yet
